@@ -1,0 +1,67 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the forum_notification module
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function forum_notification_schema() {
+  $schema['forum_notification'] = array(
+    'description' => 'User Forum_notification',
+    'fields' => array(
+      'nnid' => array(
+        'description' => 'Primary key: Unique subscriber ID.',
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+
+      'mail' => array(
+        'description' => "The user's email address.",
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'uid' => array(
+        'description' => 'The {users}.uid that has the same email address.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'frequency' => array(
+        'description' => 'The frequency of notification.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 2,
+      ),
+
+      'changes_forums' => array(
+        'description' => 'Contains the requested forums changes',
+        'type' => 'text',
+        'serialize' => TRUE,
+      ),
+      'created' => array(
+        'description' => 'UNIX timestamp of when the user forum notification record was added.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('nnid'),
+    'indexes' => array(
+      'mail' => array('mail'),
+      'uid' => array('uid'),
+    ),
+    'foreign keys' => array(
+      'uid' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid'),
+      ),
+    ),
+  );
+  return $schema;
+}

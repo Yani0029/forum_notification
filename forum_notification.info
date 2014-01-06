@@ -1,0 +1,6 @@
+name = Forum notification (Integration with user module)
+description = Send forum notification to user's email addresses.
+core = 7.x
+package = Features
+features[features_api][] = api:2
+dependencies[] = forum

@@ -1,0 +1,215 @@
+<?php
+/**
+ * @file event_sign module file
+ * author: yani@bellcom.dk
+ */
+
+
+function forum_notification_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+  if ($form_id == 'user_register_form' || ($form_id == 'user_profile_form' && $form['#user_category'] == 'account')) {
+    // Form element. It's a fieldset , "Toggle display"
+    $form['forum_update_user_settings'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Forum Notification'),
+      '#collapsible' => TRUE,
+    );
+
+    $data = forum_forum_load();
+    //print_r($data);
+
+    $newdata = $init = array();
+    foreach ($data->forums as $tid => $item) {
+      $forum_name = $item->name;
+      $newdata[$tid] = t($forum_name);
+      $init[$tid] = $tid;
+    }
+
+    // Check if there is a record in database.
+    $uri = current_path();
+    $uri_0 = preg_split("/\//",$uri);
+    if (isset($uri_0[1]) && is_numeric($uri_0[1])) {
+      $notify = forum_notification_load_by_uid($uri_0[1]);
+    }
+    if (isset($notify->changes_forums)) {
+      $val_1 = unserialize($notify->changes_forums);
+    }
+    else {
+      $val_1 = $init;
+    }
+    $val_2 = isset($notify->frequency) ? $notify->frequency : 2;
+
+    $newdata_2 = array(
+                  '0' => t('Never'),
+                  '1' => t('Daily'),
+                  '2' => t('Weekly'),
+                  '3' => t('Monthly'),
+                  '4' => t('Live'),
+
+                       );
+    $form['forum_update_user_settings']['forum_update_user_frequency'] = array(
+      '#type' => 'select',
+      '#title' => t('Forum notification frequency'),
+      '#options' => $newdata_2,
+      '#description' => t('Choose notification frequency, default is weekly'),
+      '#default_value' => $val_2,
+
+    );
+    $form['forum_update_user_settings']['forum_update_user_options'] = array(
+      '#type' => 'checkboxes',
+      '#title' => t('Forum notification options'),
+      '#options' => $newdata,
+      '#description' => t('Check or uncheck the respective fields'),
+      '#default_value' => $val_1,
+    );
+  }
+}
+
+/**
+ * Implements hook_user_presave().
+ *
+ * User data (forum nitification).
+ * This function handles existing user account, forum_notification_user_insert takes
+ * care of new accounts.
+ * @see forum_notification_user_insert()
+ */
+function forum_notification_user_presave(&$edit, $account, $category) {
+  switch ($category) {
+    case 'account':
+      // We only process existing accounts.
+      if (!empty($account->uid)) {
+        $notify = forum_notification_load_by_uid($account->uid);
+        if ($notify) {
+          $notify->uid = $account->uid;
+          // Update mail, status and language if they are changed.
+          if (isset($edit['mail'])) {
+            $notify->mail = $edit['mail'];
+          }
+          if (isset($edit['forum_update_user_options'])) {
+            $notify->changes_forums = serialize($edit['forum_update_user_options']);
+          }
+          if (isset($edit['forum_update_user_frequency'])) {
+            $notify->frequency = $edit['forum_update_user_frequency'];
+          }
+          forum_notification_save($notify);
+
+        }
+        elseif (isset($edit['mail']) && !empty($edit['mail'])) {
+          $query = db_insert('forum_notification')
+            ->fields(array(
+            'mail' => $edit['mail'],
+            'uid' => $account->uid,
+            'frequency' => $edit['forum_update_user_frequency'],
+            'changes_forums' => serialize(isset($edit['forum_update_user_options']) ? $edit['forum_update_user_options'] : array()),
+            'created' => REQUEST_TIME,
+          ));
+          $last_insert_id = $query->execute();
+        }
+      }
+      break;
+  }
+}
+
+
+/**
+ * Load a forum notification object.
+ *
+ * @param $uid
+ *    user id.
+ * @return
+ *   forum notification object, FALSE if user does not want be notified.
+ *
+ */
+function forum_notification_load_by_uid($uid) {
+  $result = db_query("SELECT * FROM {forum_notification} WHERE uid = $uid")->fetchObject();;
+
+  return isset($result) ? $result: FALSE;
+}
+
+
+/**
+ * Store forum notification object in the database.
+ */
+function forum_notification_save(&$notify) {
+  if (!empty($notify->nnid)) {
+    db_update('forum_notification')
+      //->key(array('tid' => $category->tid))
+      ->condition('nnid', $notify->nnid)
+      ->fields(array(
+        'nnid' => $notify->nnid,
+        'mail' => $notify->mail,
+        'uid' => $notify->uid,
+        'frequency' => $notify->frequency,
+        'changes_forums' => $notify->changes_forums,
+      ))
+      ->execute();
+
+  }
+  elseif (empty($notify->nnid)) {
+    $query = db_insert('forum_notification')
+      ->fields(array(
+      'mail' => $notify->mail,
+      'uid' => $notify->uid,
+      'frequency' => $notify->frequency,
+      'changes_forums' => $notify->changes_forums,
+      'created' => REQUEST_TIME,
+      ));
+    $last_insert_id = $query->execute();
+    if ($last_insert_id !== FALSE) {
+      $notify->nnid = $last_insert_id;
+
+    }
+  }
+}
+
+/**
+ * Implements hook_user_insert().
+ *
+ * Update uid and preferred language when the new account was already subscribed.
+ */
+function forum_notification_user_insert(&$edit, $account, $category) {
+  // Use the email address to check if new account is already notified.
+  $notify = forum_notification_load_by_uid($edit['uid']);
+  // If the user is notified, return. 
+  if ($notify) {
+    return;
+  }
+
+  // Process forum notification check boxes.
+  if (isset($edit['forum_update_user_frequency'])) {
+    $query = db_insert('forum_notification')
+            ->fields(array(
+            'mail' => $edit['mail'],
+            'uid' => $account->uid,
+            'frequency' => $edit['forum_update_user_frequency'],
+            'changes_forums' => serialize(isset($edit['forum_update_user_options']) ? $edit['forum_update_user_options'] : array()),
+            'created' => REQUEST_TIME,
+    ));
+    $last_insert_id = $query->execute();
+  }
+}
+
+/**
+ * Implements hook_user_delete().
+ */
+function forum_notification_user_delete($account) {
+  // Delete notification when account is removed.
+  $notify = forum_notification_load_by_uid($account->uid);
+  if ($notify) {
+    forum_notification_delete($notify);
+  }
+}
+/**
+ * Delete notification from the database.
+ *
+ * @param $nnid
+ *   notification object.
+ *
+ */
+function forum_notification_delete(stdClass $notify) {
+
+  db_delete('forum_notification')
+    ->condition('uid', $notify->uid)
+    ->execute();
+
+}
