@@ -14,7 +14,8 @@ function forum_notification_form_alter(&$form, &$form_state, $form_id) {
       '#title' => t('Forum Notification'),
       '#collapsible' => TRUE,
     );
-
+    //dpm($form);
+    //$form['locations'][0]['#title'] = "Fakuraadresse";
     $data = forum_forum_load();
     //print_r($data);
 
@@ -211,5 +212,121 @@ function forum_notification_delete(stdClass $notify) {
   db_delete('forum_notification')
     ->condition('uid', $notify->uid)
     ->execute();
+
+}
+/*
+ *Implement hook_menu()
+ *
+ */
+function forum_notification_menu() {
+  $items = array();
+  $items['forum_notification/test'] = array(
+    'title' => 'Forum notification test',
+  //  'type' => MENU_CALLBACK,
+   // 'page callback' => 'drupal_get_form',
+    'page callback' => 'forum_notification_prepare_mail',
+    'access arguments' => array('administer site configuration'),
+  );
+  return $items;
+}
+
+function forum_notification_prepare_mail() {
+  print  $last_send_time = variable_get('last_sent_time','2011-12-31');
+
+  print $date = date('Y-m-d');
+  if ($last_send_time == $date) {
+    drupal_set_message("Mails er allerede blevet sendt i dag");
+    drupal_goto("/");
+    break;
+  }
+  if ($date > $last_send_time) {
+    print  $time = strtotime($last_send_time);
+    $results = db_query("SELECT nid FROM {node} WHERE type= 'forum' and created >= $time")->fetchAll();
+    print_r($results);
+    $new_node = array();
+    if ($results) {
+      foreach ($results as $node) {
+        $node = node_load($node->nid);
+        $tid = $node->taxonomy_forums['und'][0]['tid'];
+  
+         print $new_node[$tid][] = $node;
+
+      }
+      $result = forum_notification_sendmail($new_node);
+    }
+    else {
+      drupal_set_message("Der er ingen ny forumemner.", 'status');
+      drupal_goto("<front>");
+    }
+  }
+  //print_r($new_node);
+ // $result = forum_notification_send_mail($new_node);
+  //$last_send_time = variable_set('last_send_time',$date);
+}
+function forum_notification_sendmail($new_node) {
+
+  if (empty($new_node)) {
+    return;
+  }
+  global $language;
+  // Send a email for each forum.
+  foreach ($new_node as $tid => $nodes) {
+    $forum = taxonomy_term_load($tid);
+    print $forum->name;
+    $body = "<div style='font-size: 32px; font-weight: bold; margin: 30px 30px;'> Nye forumemner i ". $forum->name ."på itchefer.dk</div>" . "<hr />";
+    foreach ($nodes as $key => $node) {
+      $body = $body . "<h3>".$node->title."</h3>";
+      $body = $body . "<div>". $node->body['und'][0]['value'] ."</div><hr>";
+    }
+    $body;
+    $params = array(
+      'subject' => "Forum - " . $forum->name ." nye emner notifikation",
+      'message' => $body,
+    );
+    // Get mail from user who subscrips the forum notification.
+    $users = db_query("SELECT * FROM {forum_notification}")->fetchAll();
+
+    $mail_list = "";
+    foreach ($users as $key => $user) {
+
+      $forum_array = unserialize($user->changes_forums);
+      if ($forum_array[$tid] != 0) {
+        if ($mail_list == "")
+          $mail_list = $mail_list.$user->mail;
+        else
+          $mail_list = $mail_list. ",".$user->mail;
+      }
+    }
+   //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
+   $from = variable_get('site_mail', 'mail@itchefer.dk');
+   $re= drupal_mail('forum_notification', 'notice', $mail_list, $language, $params, $from, TRUE);
+  //print $re;
+  }
+  drupal_set_message('Mails udsendt.', 'status');
+  drupal_goto("<front>");
+}
+/*
+ * Implement hook_mail()
+ */
+function forum_notification_mail($key,&$message, $params) {
+  global $language;
+  $from = variable_get('site_mail', 'mail@itchefer.dk');
+  $variables = array(
+    '!site-name' => variable_get('site_name','Itchefer.dk'),
+    '!subject' => $params['subject'],
+    '!category' => isset($params['category']['category']) ? $params['category']['category'] : '',
+    '!form-url' => url($_GET['q'], array('absolute' => TRUE, 'language' => $language)),
+    '!sender-name' => "itchefer.dk",
+    '!sender-url' => $from,
+
+
+  );
+  switch ($key) {
+     case 'notice':
+      $message['subject'] .= t($params['subject'], array('langcode' => $language));
+      $message['body'][] = $params['message'] ;
+      break;
+
+  }
 
 }
