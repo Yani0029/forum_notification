@@ -1,10 +1,12 @@
 <?php
 /**
- * @file event_sign module file
+ * @file forum_notification module file.
  * author: yani@bellcom.dk
  */
 
-
+/*
+ *Implement hook_form_alter().
+ */
 function forum_notification_form_alter(&$form, &$form_state, $form_id) {
   global $user;
   if ($form_id == 'user_register_form' || ($form_id == 'user_profile_form' && $form['#user_category'] == 'account')) {
@@ -14,10 +16,8 @@ function forum_notification_form_alter(&$form, &$form_state, $form_id) {
       '#title' => t('Forum Notification'),
       '#collapsible' => TRUE,
     );
-    //dpm($form);
-    //$form['locations'][0]['#title'] = "Fakuraadresse";
+
     $data = forum_forum_load();
-    //print_r($data);
 
     $newdata = $init = array();
     foreach ($data->forums as $tid => $item) {
@@ -230,58 +230,58 @@ function forum_notification_menu() {
   return $items;
 }
 
-function forum_notification_prepare_mail() {
-  print  $last_send_time = variable_get('last_sent_time','2011-12-31');
+function forum_notification_prepare_mail($last_send_time,$type) {
 
-  print $date = date('Y-m-d');
-  if ($last_send_time == $date) {
-    drupal_set_message("Mails er allerede blevet sendt i dag");
-    drupal_goto("/");
-    break;
+  if (empty($last_send_time) || !isset($last_send_time)) {
+    return;
   }
-  if ($date > $last_send_time) {
-    print  $time = strtotime($last_send_time);
+  if (empty($type) || !isset($type)) $type = 1;
+
+    $time = strtotime($last_send_time);
     $results = db_query("SELECT nid FROM {node} WHERE type= 'forum' and created >= $time")->fetchAll();
-    print_r($results);
+
     $new_node = array();
     if ($results) {
       foreach ($results as $node) {
         $node = node_load($node->nid);
         $tid = $node->taxonomy_forums['und'][0]['tid'];
-  
-         print $new_node[$tid][] = $node;
-
+        $new_node[$tid][] = $node;
       }
-      $result = forum_notification_sendmail($new_node);
+      $result = forum_notification_sendmail($new_node,$type);
     }
     else {
-      drupal_set_message("Der er ingen ny forumemner.", 'status');
-      drupal_goto("<front>");
+      $msg = "Der er ingen Forum notifikation mail blevet sendt. Der er ikke ny forumemner.";
+      watchdog(
+        'Forum notification',
+        $msg,
+        $variables = array(
+                      '%runtime' => date('Y-m-d'),
+                      '%success' => date('Y-m-d')
+                      )
+      );
     }
-  }
-  //print_r($new_node);
- // $result = forum_notification_send_mail($new_node);
-  //$last_send_time = variable_set('last_send_time',$date);
+    
 }
-function forum_notification_sendmail($new_node) {
+function forum_notification_sendmail($new_node,$type) {
 
   if (empty($new_node)) {
     return;
   }
+  if (empty($type) || !isset($type)) $type = 1;
   global $language;
   $url = base_path();
   //$url = $_SERVER['HTTP_HOST'].'/user';
   // Send a email for each forum.
   foreach ($new_node as $tid => $nodes) {
     $forum = taxonomy_term_load($tid);
-    print $forum->name;
+    $forum->name;
     $body = "<div style='font-size: 32px; font-weight: bold; margin: 30px 30px;'> Nye forumemner i ". $forum->name ."på itchefer.dk</div>" . "<hr />";
     foreach ($nodes as $key => $node) {
-      $body = $body . "<h3>".$node->title."</h3>";
+      $body = $body . "<h3><a href='".$url.$node->nid."'>".$node->title."</a></h3>";
       $author = user_load($node->uid)->name;
       $body .= "<div>Af ".$author;
       $body .= " den ".date('d.M.Y',$node->created)."</div>";
-      // Set body length 400;
+      // TODO yani: Set body length 400;
       //$body_text = $node->body['und'][0]['value'];
       $body_text = check_markup($node->body['und'][0]['value'],'full_html');
       //$body_text = substr($body_text,0,400);
@@ -297,29 +297,57 @@ function forum_notification_sendmail($new_node) {
       'subject' => "Forum - " . $forum->name ." nye emner notifikation",
       'message' => $body,
     );
-    // Get mail from user who subscrips the forum notification.
+    // Get mail from user who subscrips the forum notification.forum_notification_prepare_mail($last_send_time,$type)
     $users = db_query("SELECT * FROM {forum_notification}")->fetchAll();
 
     $mail_list = "";
+    $no = 0;
     foreach ($users as $key => $user) {
 
       $forum_array = unserialize($user->changes_forums);
-      if ($forum_array[$tid] != 0) {
-        if ($mail_list == "")
+      if ($forum_array[$tid] != 0 && $user->frequency == $type) {
+        if ($mail_list == "") {
           $mail_list = $mail_list.$user->mail;
-        else
+        }
+        else {
           $mail_list = $mail_list. ",".$user->mail;
+        }
+        $no .= 1;
       }
     }
-   //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
-   $from = variable_get('site_mail', 'mail@itchefer.dk');
-   $re= drupal_mail('forum_notification', 'notice', $mail_list, $language, $params, $from, TRUE);
-  //print $re;
+    //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
+    $from = variable_get('site_mail', 'mail@itchefer.dk');
+    if (!empty($mail_list)) {
+      drupal_mail('forum_notification', 'notice', $mail_list, $language, $params, $from, TRUE);
+      $msg = "Der er $no mails som er blevet sendt for Forum - ".$forum->name . "type - ".$type;
+      watchdog(
+        'Forum notification',
+        $msg,
+        $variables = array(
+                      '%runtime' => date('Y-m-d'),
+                      '%success' => date('Y-m-d')
+                      )
+      );
+    }
+
+
   }
-  drupal_set_message('Mails udsendt.', 'status');
-  drupal_goto("<front>");
+  switch($type) {
+    case 1 :
+      $last_send_time_day = variable_set('last_send_time_day',date('Y-m-d'));
+      break;
+    case 2 :
+      $last_send_time_week = variable_set('last_send_time_week',date('Y-m-d'));
+      break;
+    case 3 :
+      $last_send_time_month = variable_set('last_send_time_month',date('Y-m-d'));
+      break;
+  }
+
+  //drupal_set_message('Mails udsendt.', 'status');
+  //drupal_goto("<front>");
 }
-/*
+/**
  * Implement hook_mail()
  */
 function forum_notification_mail($key,&$message, $params) {
@@ -332,8 +360,6 @@ function forum_notification_mail($key,&$message, $params) {
     '!form-url' => url($_GET['q'], array('absolute' => TRUE, 'language' => $language)),
     '!sender-name' => "itchefer.dk",
     '!sender-url' => $from,
-
-
   );
   switch ($key) {
      case 'notice':
@@ -343,4 +369,64 @@ function forum_notification_mail($key,&$message, $params) {
 
   }
 
+}
+
+
+/**
+ * Implements hook_cron().
+ */
+function forum_notification_cron() {
+  $last_send_time_day = variable_get('last_send_time_day','2011-12-31');
+  // Always send on monday.
+  $last_send_time_week = variable_get('last_send_time_week','2011-12-31');
+  // Alway send on the 1 day of next month.
+  $last_send_time_month = variable_get('last_send_time_month','2011-12-31');
+
+  $current_D = strtotime(date('Y-m-d'));
+  $last_time = strtotime($last_send_time_day);
+  $diff = $last_time + 24*60*60;
+
+  $current_w = date('W');
+  $current_y = date('Y');
+  $last_w_time = strtotime($last_send_time_week);
+  $last_w = date('W',$last_w_time);
+  $last_y = date('Y',$last_w_time);
+  // Send every day
+    if ($current_D == $diff) {
+      forum_notification_prepare_mail($last_send_time_day,1);
+    }
+    elseif ($current_y > $last_y) {
+      forum_notification_prepare_mail($last_send_time_day,1);
+    }
+
+  // Send every week
+    if ($current_w > $last_w) {
+      forum_notification_prepare_mail($last_send_time_week,2);
+    }
+    elseif ($current_y > $last_y) {
+      forum_notification_prepare_mail($last_send_time_week,2);
+    }
+
+  // Send every month
+  $last_m_time = strtotime($last_send_time_month);
+  $last_m = date('m',$last_m_time);
+  $current_m = date('m');
+  // date('d')=='01';
+    if ($current_m > $last_m) {
+      forum_notification_prepare_mail($last_send_time_month,3);
+    }
+    elseif ($current_y > $last_y) {
+      forum_notification_prepare_mail($last_send_time_month,3);
+    }
+  if (($current_D == $last_time || $current_w == $last_w || $current_m == $last_m) && ($current_y == $last_y)) {
+      $msg = "Der er ingen Forum notifikation mail blevet sendt. Mails har allerede sendt.";
+      watchdog(
+        'Forum notification',
+        $msg,
+        $variables = array(
+                      '%runtime' => date('Y-m-d'),
+                      '%success' => date('Y-m-d')
+                      )
+      );
+  }
 }
