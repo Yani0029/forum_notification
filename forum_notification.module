@@ -269,6 +269,8 @@ function forum_notification_sendmail($new_node) {
     return;
   }
   global $language;
+  $url = base_path();
+  //$url = $_SERVER['HTTP_HOST'].'/user';
   // Send a email for each forum.
   foreach ($new_node as $tid => $nodes) {
     $forum = taxonomy_term_load($tid);
@@ -276,9 +278,21 @@ function forum_notification_sendmail($new_node) {
     $body = "<div style='font-size: 32px; font-weight: bold; margin: 30px 30px;'> Nye forumemner i ". $forum->name ."på itchefer.dk</div>" . "<hr />";
     foreach ($nodes as $key => $node) {
       $body = $body . "<h3>".$node->title."</h3>";
-      $body = $body . "<div>". $node->body['und'][0]['value'] ."</div><hr>";
+      $author = user_load($node->uid)->name;
+      $body .= "<div>Af ".$author;
+      $body .= " den ".date('d.M.Y',$node->created)."</div>";
+      // Set body length 400;
+      //$body_text = $node->body['und'][0]['value'];
+      $body_text = check_markup($node->body['und'][0]['value'],'full_html');
+      //$body_text = substr($body_text,0,400);
+      //$body = $body ."<p>".$body_text. " ...   <a href='".$url."node".$node->nid."'>Læs mere</a></p>";
+      $body = $body .$body_text. "<hr>";
     }
-    $body;
+    // TODO yani: admin.inc settings form for email body footer.
+    $site_name = variable_get('site_slogan','KIT@ Foreningen af Kommunale it-chefer');
+    $body_footer =  "<div style='margin: 30px 0 30px 0'>";
+    $body_footer .= "Du har modtaget denne e-mail som en KIT@ medlem. Du kan <a href ='".$url."user"."'>logge ind</a> for at konfigurere dine indstillinger.<br><a href='".$url."node'> KIT@ ". $site_name . "</a><br></div>";
+    $body = $body.$body_footer;
     $params = array(
       'subject' => "Forum - " . $forum->name ." nye emner notifikation",
       'message' => $body,
