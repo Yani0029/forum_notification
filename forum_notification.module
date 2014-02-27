@@ -38,7 +38,7 @@ function forum_notification_form_alter(&$form, &$form_state, $form_id) {
     else {
       $val_1 = $init;
     }
-    $val_2 = isset($notify->frequency) ? $notify->frequency : 2;
+    $val_2 = isset($notify->frequency) ? $notify->frequency : 0;
 
     $newdata_2 = array(
                   '0' => t('Never'),
@@ -217,8 +217,9 @@ function forum_notification_delete(stdClass $notify) {
 /*
  *Implement hook_menu()
  *
- */
+ *
 function forum_notification_menu() {
+  // TODO: test with arguments!!!
   $items = array();
   $items['forum_notification/test'] = array(
     'title' => 'Forum notification test',
@@ -228,7 +229,7 @@ function forum_notification_menu() {
     'access arguments' => array('administer site configuration'),
   );
   return $items;
-}
+}*/
 
 function forum_notification_prepare_mail($last_send_time,$type) {
 
@@ -262,6 +263,28 @@ function forum_notification_prepare_mail($last_send_time,$type) {
     }
     
 }
+function forum_notification_generate_mail_body(stdClass $node) {
+  if (!isset($node) || empty($node)) {
+    return;
+  }
+  //  $url = base_path();
+  $url = $_SERVER['HTTP_HOST'];
+  // Warning: Remember to add close tags.
+  $body = "<html><body><h3><a href='http://".$url."/node/".$node->nid."'>".$node->title."</a></h3>";
+  $author = user_load($node->uid)->name;
+  $body .= "<div>Af ".$author;
+  $body .= " den ".date('d.M.Y H:i:s',$node->created)."</div><br>";
+  // TODO yani: Set body length 400;
+  //$body_text = $node->body['und'][0]['value'];
+  if (isset($node->body['und'])) {
+    $body .= check_markup($node->body['und'][0]['value'],'full_html');
+  }
+  //$body_text = substr($body_text,0,400);
+  //$body = $body ."<p>".$body_text. " ...   <a href='".$url."node".$node->nid."'>Læs mere</a></p>";
+  $body .= "<hr>";
+  return $body;
+
+}
 function forum_notification_sendmail($new_node,$type) {
 
   if (empty($new_node)) {
@@ -269,34 +292,30 @@ function forum_notification_sendmail($new_node,$type) {
   }
   if (empty($type) || !isset($type)) $type = 1;
   global $language;
-  $url = base_path();
-  //$url = $_SERVER['HTTP_HOST'].'/user';
+  //$url = base_path();
+  $url = $_SERVER['HTTP_HOST'];
   // Send a email for each forum.
   foreach ($new_node as $tid => $nodes) {
     $forum = taxonomy_term_load($tid);
     $forum->name;
-    $body = "<div style='font-size: 32px; font-weight: bold; margin: 30px 30px;'> Nye forumemner i ". $forum->name ."på itchefer.dk</div>" . "<hr />";
+    $body = "<div style='font-size: 16px; font-weight: bold; margin: 10px 10px;'> Nye forumemner i ". $forum->name ." på itchefer.dk</div>" . "<hr />";
     foreach ($nodes as $key => $node) {
-      $body = $body . "<h3><a href='".$url.$node->nid."'>".$node->title."</a></h3>";
-      $author = user_load($node->uid)->name;
-      $body .= "<div>Af ".$author;
-      $body .= " den ".date('d.M.Y',$node->created)."</div>";
-      // TODO yani: Set body length 400;
-      //$body_text = $node->body['und'][0]['value'];
-      $body_text = check_markup($node->body['und'][0]['value'],'full_html');
-      //$body_text = substr($body_text,0,400);
-      //$body = $body ."<p>".$body_text. " ...   <a href='".$url."node".$node->nid."'>Læs mere</a></p>";
-      $body = $body .$body_text. "<hr>";
+      $body .= forum_notification_generate_mail_body($node);
     }
     // TODO yani: admin.inc settings form for email body footer.
     $site_name = variable_get('site_slogan','KIT@ Foreningen af Kommunale it-chefer');
     $body_footer =  "<div style='margin: 30px 0 30px 0'>";
-    $body_footer .= "Du har modtaget denne e-mail som en KIT@ medlem. Du kan <a href ='".$url."user"."'>logge ind</a> for at konfigurere dine indstillinger.<br><a href='".$url."node'> KIT@ ". $site_name . "</a><br></div>";
-    $body = $body.$body_footer;
+    $body_footer .= "Du har modtaget denne e-mail som en KIT@ medlem. Du kan <a href ='http://".$url."/user"."'>logge ind</a> for at konfigurere dine indstillinger.<br><a href='http://".$url."/node'> KIT@ ". $site_name . "</a><br></div>";
+    $body .= $body_footer;
+    // Add html and body close tags, opened in _generate_mail_body.
+    $body .= "</html></body>";
     $params = array(
       'subject' => "Forum - " . $forum->name ." nye emner notifikation",
       'message' => $body,
     );
+    // Test: html mail
+    
+
     // Get mail from user who subscrips the forum notification.forum_notification_prepare_mail($last_send_time,$type)
     $users = db_query("SELECT * FROM {forum_notification}")->fetchAll();
 
@@ -305,21 +324,24 @@ function forum_notification_sendmail($new_node,$type) {
     foreach ($users as $key => $user) {
 
       $forum_array = unserialize($user->changes_forums);
-      if ($forum_array[$tid] != 0 && $user->frequency == $type) {
+      if (isset($forum_array[$tid]) && $forum_array[$tid] != 0 && $user->frequency == $type) {
         if ($mail_list == "") {
           $mail_list = $mail_list.$user->mail;
         }
         else {
           $mail_list = $mail_list. ",".$user->mail;
         }
-        $no .= 1;
+        $no += 1;
       }
     }
     //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
     $from = variable_get('site_mail', 'mail@itchefer.dk');
+    variable_set('mail_system', array_merge(
+       variable_get('mail_system', array('default-system' => 'DefaultMailSystem')), // Previously set mail_system variable
+       array('forum_notification' => 'HTMLMailSystem')));
     if (!empty($mail_list)) {
       drupal_mail('forum_notification', 'notice', $mail_list, $language, $params, $from, TRUE);
-      $msg = "Der er $no mails som er blevet sendt for Forum - ".$forum->name . "type - ".$type;
+      $msg = "Der er $no mails som er blevet sendt for Forum - ".$forum->name . " type - ".$type;
       watchdog(
         'Forum notification',
         $msg,
@@ -329,8 +351,6 @@ function forum_notification_sendmail($new_node,$type) {
                       )
       );
     }
-
-
   }
   switch($type) {
     case 1 :
@@ -363,6 +383,7 @@ function forum_notification_mail($key,&$message, $params) {
   );
   switch ($key) {
      case 'notice':
+      $message['headers']['Content-Type'] = 'text/html; charset=UTF-8;';
       $message['subject'] .= t($params['subject'], array('langcode' => $language));
       $message['body'][] = $params['message'] ;
       break;
@@ -429,4 +450,16 @@ function forum_notification_cron() {
                       )
       );
   }
+}
+
+function forum_notification_callback_from_rules($nid) {
+  if (!isset($nid) || !is_numeric($nid)) {
+    return;
+  }
+  $node = node_load($nid);
+  $tid = $node->taxonomy_forums['und'][0]['tid'];
+  $array = array();
+  $array[$tid][]=$node;
+  forum_notification_sendmail($array,4);
+
 }
