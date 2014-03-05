@@ -305,7 +305,7 @@ function forum_notification_sendmail($new_node,$type) {
     // TODO yani: admin.inc settings form for email body footer.
     $site_name = variable_get('site_slogan','KIT@ Foreningen af Kommunale it-chefer');
     $body_footer =  "<div style='margin: 30px 0 30px 0'>";
-    $body_footer .= "Du har modtaget denne e-mail som en KIT@ medlem. Du kan <a href ='http://".$url."/user"."'>logge ind</a> for at konfigurere dine indstillinger.<br><a href='http://".$url."/node'> KIT@ ". $site_name . "</a><br></div>";
+    $body_footer .= "Du har modtaget denne e-mail som medlem af KIT@. Du skal <a href ='http://".$url."/user"."'>logge ind</a> for at konfigurere dine indstillinger.<br><a href='http://".$url."/node'> KIT@ ". $site_name . "</a><br></div>";
     $body .= $body_footer;
     // Add html and body close tags, opened in _generate_mail_body.
     $body .= "</html></body>";
