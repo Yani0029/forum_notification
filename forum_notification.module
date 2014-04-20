@@ -294,7 +294,13 @@ function forum_notification_sendmail($new_node,$type) {
   global $language;
   //$url = base_path();
   $url = $_SERVER['HTTP_HOST'];
-  // Send a email for each forum.
+  $from = variable_get('site_mail', 'mail@itchefer.dk');
+
+  //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
+  variable_set('mail_system', array_merge(
+       variable_get('mail_system', array('default-system' => 'DefaultMailSystem')), array('forum_notification' => 'HTMLMailSystem')));
+
+  // Send email for each forum.
   foreach ($new_node as $tid => $nodes) {
     $forum = taxonomy_term_load($tid);
     $forum->name;
@@ -314,42 +320,36 @@ function forum_notification_sendmail($new_node,$type) {
       'message' => $body,
     );
     // Test: html mail
-    
 
     // Get mail from user who subscrips the forum notification.forum_notification_prepare_mail($last_send_time,$type)
     $users = db_query("SELECT * FROM {forum_notification}")->fetchAll();
 
-    $mail_list = "";
-    $no = 0;
     foreach ($users as $key => $user) {
 
       $forum_array = unserialize($user->changes_forums);
       if (isset($forum_array[$tid]) && $forum_array[$tid] != 0 && $user->frequency == $type) {
-        if ($mail_list == "") {
-          $mail_list = $mail_list.$user->mail;
+        $to = $user->mail;
+        $result = drupal_mail('forum_notification', 'notice', $to, $language, $params, $from, TRUE);
+        if ($result['result'] == TRUE) {
+          $msg = "Forum - ".$forum->name . " type - ".$type . " Mail is sent to email = %email";
+          watchdog(
+            'Forum notification', $msg, $variables = array(
+              '%email' => $to,
+              '%runtime' => date('Y-m-d'),
+              '%success' => date('Y-m-d')
+            )
+          );
         }
         else {
-          $mail_list = $mail_list. ",".$user->mail;
+          $msg = "Forum - ".$forum->name . " type - ".$type . "Error : Mail nid = %nid is NOT sent to email=%email";
+          watchdog(
+            'Forum notification', $msg, $variables = array(
+              '%email' => $to,
+              '%runtime' => date('Y-m-d'),
+            )
+          );
         }
-        $no += 1;
       }
-    }
-    //variable_set('mail_system', array('default-system' => 'DefaultMailSystem', 'forum_notification' => 'ExampleMailSystem'));
-    $from = variable_get('site_mail', 'mail@itchefer.dk');
-    variable_set('mail_system', array_merge(
-       variable_get('mail_system', array('default-system' => 'DefaultMailSystem')), // Previously set mail_system variable
-       array('forum_notification' => 'HTMLMailSystem')));
-    if (!empty($mail_list)) {
-      drupal_mail('forum_notification', 'notice', $mail_list, $language, $params, $from, TRUE);
-      $msg = "Der er $no mails som er blevet sendt for Forum - ".$forum->name . " type - ".$type;
-      watchdog(
-        'Forum notification',
-        $msg,
-        $variables = array(
-                      '%runtime' => date('Y-m-d'),
-                      '%success' => date('Y-m-d')
-                      )
-      );
     }
   }
   switch($type) {
