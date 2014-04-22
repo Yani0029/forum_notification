@@ -322,7 +322,7 @@ function forum_notification_sendmail($new_node,$type) {
     // Test: html mail
 
     // Get mail from user who subscrips the forum notification.forum_notification_prepare_mail($last_send_time,$type)
-    $users = db_query("SELECT * FROM {forum_notification}")->fetchAll();
+    $users = db_query("SELECT * FROM {forum_notification} f, {users} u WHERE f.uid = u.uid AND u.status = 1")->fetchAll();
 
     foreach ($users as $key => $user) {
 
