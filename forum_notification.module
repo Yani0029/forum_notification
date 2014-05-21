@@ -4,6 +4,130 @@
  * author: yani@bellcom.dk
  */
 
+function forum_notification_menu(){
+  $items = array();
+  $items['intra/medlemmer/setting'] = array(
+    'title' => t('Forum notifikation opdatering'),
+    'description' => 'Opdatering af notifikation for alle brugere',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('forum_notification_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_LOCAL_TASK
+  );
+  $items['admin/structure/forum/update_users'] = array(
+    'title' => t('Forum notifikation opdatering'),
+    'description' => 'Opdatering af notifikation for alle brugere',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('forum_notification_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_LOCAL_TASK
+  );
+  return $items;
+}
+
+function forum_notification_settings_form($form, $form_state) {
+  $data = forum_forum_load();
+  $newdata = array();
+  foreach ($data->forums as $tid => $item) {
+    $forum_name = $item->name;
+    $newdata[$tid] = t($forum_name);
+  }
+  $form['forum_user_forum_settings']['forum_user_update_options'] = array(
+    '#type' => 'checkboxes',
+    '#title' => 'Tilføj/Slet forum(s) - alle brugere',
+    '#options' => $newdata,
+    '#description' => t('Check or uncheck the respective fields'),
+  );
+  $form['forum_user_forum_settings']['forum_user_update_options_1'] = array(
+    '#type' => 'checkbox',
+    '#prefix' =>'<b>',
+    '#suffix' =>'</b>',
+    '#title' => "<b>Bekræft ! -- ".t('This action cannot be undone.') ."</b>",
+    '#required' => TRUE,
+    '#description' => t('Alle brugere blive opdateret.'),
+  );
+  $form['forum_user_forum_settings']['forum_user_forum_settings_submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Tilføj!'),
+    '#access' => $is_admin,
+    '#submit' => array('forum_notification_settings_form_submit')
+  );
+  $form['forum_user_forum_settings']['forum_user_forum_settings_submit_delete'] = array(
+    '#type' => 'submit',
+    '#value' => t('Slet fra alle brugere!'),
+    '#access' => $is_admin,
+    '#submit' => array('forum_notification_settings_form_delete')
+  );
+  return $form;
+}
+function forum_notification_settings_form_submit($form, &$form_state) {
+  $count = forum_notification_update_all_users($operation = 1,$form_state);
+  if($count < 2) {
+    $bruger = "bruger";
+  }
+  else {
+    $bruger = "brugere";
+  }
+  drupal_set_message("$count $bruger opdateret", 'status');
+}
+
+function forum_notification_update_all_users($operation = 1,&$form_state){
+  $data = forum_forum_load();
+  $newdata = array();
+  foreach ($data->forums as $tid => $item) {
+    if($form_state['values']['forum_user_update_options'][$tid]) {
+      $newdata[$tid] = $form_state['values']['forum_user_update_options'][$tid];
+    }
+  }
+  $users = entity_load('user');
+
+  //$users = user_load_multiple(array(1,26));
+  $count = 0;
+  foreach ($users as $user) {
+    if($user->status == 0) {
+      continue;
+    }
+    $notify = forum_notification_load_by_uid($user->uid);
+
+    if (isset($notify->changes_forums)) {
+      $notify_old = $user_notify = unserialize($notify->changes_forums);
+    }
+    else {
+      $notify_old = $user_notify = array();
+    }
+
+    if(!empty($newdata)) {
+      foreach ($newdata as $key => $val) {
+        if($operation == 1 && (!array_key_exists($key,$user_notify) || $user_notify[$key] == 0)) {
+          $user_notify[$key] = $val;
+        }
+        elseif ($operation == 2 && (!array_key_exists($key,$user_notify) || $user_notify[$key] != 0)) {
+          $user_notify[$key] = 0;
+        }
+      }
+    }
+
+    if (count($notify_old) != count($user_notify) || array_diff($notify_old,$user_notify) != array_diff($user_notify,$notify_old)) {
+      $notify->changes_forums = serialize($user_notify);
+      forum_notification_save($notify);
+      $count += 1;
+    }
+    else continue;
+
+  }
+  return $count;
+}
+
+function forum_notification_settings_form_delete($form,&$form_state) {
+  $count = forum_notification_update_all_users($operation = 2,$form_state);
+  if($count < 2) {
+    $bruger = "bruger";
+  }
+  else {
+    $bruger = "brugere";
+  }
+  drupal_set_message("$count $bruger opdateret", 'status');
+}
 /*
  *Implement hook_form_alter().
  */
