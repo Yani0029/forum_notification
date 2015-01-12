@@ -139,6 +139,8 @@ function forum_notification_form_builder($form = NULL) {
 }
 
 function forum_notification_settings_form($form, $form_state) {
+  global $user;
+  $is_admin = in_array('administrator', array_values($user->roles));
   $data = forum_forum_load();
   $newdata = array();
   foreach ($data->forums as $tid => $item) {
